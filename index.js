@@ -1,24 +1,35 @@
 const puppeteer = require("puppeteer");
+const express = require("express");
+const app = express();
 
-(async () => {
-  const browser = await puppeteer.launch({
-    headless: "new",
-    args: [
-      `--proxy-server=http://zproxy.lum-superproxy.io:22225`
-    ]
-  });
+app.use(express.json());
 
-  const page = await browser.newPage();
+app.post("/scrape", async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).send("Missing URL");
 
-  // Bright Data credentials
-  await page.authenticate({
-    username: 'brd-customer-<your_username>-zone-<your_zone>',
-    password: '<your_password>'
-  });
+  try {
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--proxy-server=http://brd.superproxy.io:33335"]
+    });
 
-  await page.goto('https://geo.brdtest.com/mygeo.json', { waitUntil: "networkidle2" });
-  const content = await page.content();
-  console.log(content);
+    const page = await browser.newPage();
+    await page.authenticate({
+      username: process.env.BRIGHTDATA_USERNAME || "brd-customer-<YOUR_ID>-zone-<YOUR_ZONE>",
+      password: process.env.BRIGHTDATA_PASSWORD || "<YOUR_PASSWORD>"
+    });
 
-  await browser.close();
-})();
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    const html = await page.content();
+    await browser.close();
+
+    res.status(200).send(html);
+  } catch (err) {
+    console.error("Scraping failed:", err.message);
+    res.status(500).send("Error scraping page");
+  }
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`✅ Server running on port ${port}`));
